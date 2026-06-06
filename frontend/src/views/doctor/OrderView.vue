@@ -31,8 +31,9 @@ const editId = ref<number | undefined>()
 const formLoading = ref(false)
 const formRef = ref()
 
-const form = reactive<MedicalOrder>({
+const form = reactive<MedicalOrder & { planId?: number }>({
   patientId: 0,
+  planId: undefined,
   orderType: '',
   treatmentItem: '',
   frequency: '',
@@ -62,6 +63,15 @@ const orderTypeOptions = [
   { label: '临时医嘱', value: 'TEMPORARY' },
   { label: '康复医嘱', value: 'REHAB' },
 ]
+
+const treatmentItemOptions = ref<string[]>([])
+
+async function fetchTreatmentItems() {
+  try {
+    const res = await get<any>('/tasks/treatment-items')
+    treatmentItemOptions.value = (res as any).data ?? res ?? []
+  } catch { /* ignore */ }
+}
 
 const frequencyOptions = [
   { label: '每日1次', value: 'QD' },
@@ -142,6 +152,7 @@ function openCreateDialog() {
   dialogTitle.value = '新建医嘱'
   Object.assign(form, {
     patientId: 0,
+    planId: undefined,
     orderType: '',
     treatmentItem: '',
     frequency: '',
@@ -182,11 +193,14 @@ async function handleSubmit() {
       await put(`/orders/${editId.value}`, form)
       ElMessage.success('医嘱更新成功')
     } else {
-      await post('/orders', form)
+      const payload: any = { ...form }
+      if (!payload.planId) delete payload.planId
+      await post('/orders', payload)
       ElMessage.success('医嘱创建成功')
     }
     dialogVisible.value = false
     fetchOrders()
+    fetchApprovedPlans()  // refresh approved plans list
   } catch {
     // handled by interceptor
   } finally {
@@ -228,19 +242,25 @@ async function handleReject(row: MedicalOrder) {
   }
 }
 
-async function handleGenerateTasks(row: MedicalOrder) {
+async function handleApproveDirect(row: MedicalOrder) {
+  try {
+    await put(`/orders/${row.id}/approve-direct`)
+    ElMessage.success('审核已通过')
+    fetchOrders()
+  } catch { /* handled */ }
+}
+
+async function handleRevokeApproval(row: MedicalOrder) {
   try {
     await ElMessageBox.confirm(
-      `确认为医嘱「${row.treatmentItem}」生成全部治疗任务？\n将根据排程日期 ${row.periodStart} ~ ${row.periodEnd} 创建。`,
-      '确认生成任务',
-      { confirmButtonText: '确认生成', cancelButtonText: '取消', type: 'info' },
+      `确认撤销医嘱「${row.treatmentItem}」的审核？\n撤销后治疗师将无法排程。`,
+      '确认撤销审核',
+      { confirmButtonText: '确认撤销', cancelButtonText: '取消', type: 'warning' },
     )
   } catch { return }
   try {
-    const res = await post<any>(`/orders/${row.id}/generate-tasks`)
-    const list = (res as any).data ?? res
-    const count = Array.isArray(list) ? list.length : 0
-    ElMessage.success(`已生成 ${count} 条任务`)
+    await put(`/orders/${row.id}/revoke-approval`)
+    ElMessage.success('审核已撤销')
     fetchOrders()
   } catch { /* interceptor handles */ }
 }
@@ -273,9 +293,51 @@ function handlePageChange(p: number) {
 }
 
 // ---------- lifecycle ----------
+// ---- Approved plans (待开医嘱) ----
+interface TreatmentPlan {
+  id?: number; patientId: number; planName: string; treatmentItems: string
+  frequency: string; dailyCount: number; periodStart: string; periodEnd: string
+  status: string; submitTime?: string; patientName?: string; therapistName?: string
+}
+const approvedPlans = ref<TreatmentPlan[]>([])
+
+async function fetchApprovedPlans() {
+  try {
+    const res = await get<any>('/treatment-plans/approved-by-me')
+    approvedPlans.value = (res as any).data ?? res ?? []
+  } catch { /* ignore */ }
+}
+
+function formatPlanItems(val: string): string {
+  if (!val) return '-'
+  try { const arr = JSON.parse(val); if (Array.isArray(arr)) return arr.join('、') } catch {}
+  return val
+}
+
+function openOrderFromPlan(plan: TreatmentPlan) {
+  Object.assign(form, {
+    patientId: plan.patientId,
+    planId: plan.id,
+    orderType: 'REHAB',
+    treatmentItem: formatPlanItems(plan.treatmentItems),
+    frequency: plan.frequency,
+    dailyCount: plan.dailyCount,
+    periodStart: plan.periodStart,
+    periodEnd: plan.periodEnd,
+    note: '',
+    status: 'DRAFT',
+  })
+  isEdit.value = false
+  editId.value = undefined
+  dialogTitle.value = '开具医嘱（来自方案: ' + plan.planName + '）'
+  dialogVisible.value = true
+}
+
 onMounted(() => {
   fetchOrders()
   searchPatients('')
+  fetchTreatmentItems()
+  fetchApprovedPlans()
 })
 </script>
 
@@ -325,10 +387,37 @@ onMounted(() => {
       </el-form>
     </el-card>
 
+    <!-- 待开医嘱 — approved treatment plans needing orders -->
+    <el-card v-if="approvedPlans.length" shadow="hover" class="filter-card">
+      <template #header>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <el-icon color="#e6a23c"><WarningFilled /></el-icon>
+          <span style="font-weight: 600;">待开医嘱</span>
+          <el-tag type="warning" size="small">{{ approvedPlans.length }} 个方案已审核通过</el-tag>
+        </div>
+      </template>
+      <el-table :data="approvedPlans" stripe size="small" style="width: 100%">
+        <el-table-column prop="planName" label="方案名称" min-width="140" />
+        <el-table-column label="治疗项目" min-width="180">
+          <template #default="{ row }">{{ formatPlanItems(row.treatmentItems) }}</template>
+        </el-table-column>
+        <el-table-column label="频次/日次" width="110">
+          <template #default="{ row }">{{ row.frequency }} / {{ row.dailyCount }}次/日</template>
+        </el-table-column>
+        <el-table-column prop="submitTime" label="提交时间" width="160" />
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="openOrderFromPlan(row)">开具医嘱</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <!-- table -->
     <el-card shadow="hover" class="table-card">
       <el-table :data="tableData" v-loading="tableLoading" stripe style="width: 100%">
-        <el-table-column prop="patientName" label="患者" min-width="100" />
+        <el-table-column prop="patientName" label="患者" min-width="80" />
+        <el-table-column prop="therapistName" label="责任治疗师" min-width="100" />
         <el-table-column prop="treatmentItem" label="治疗项目" min-width="140" />
         <el-table-column prop="frequency" label="频次" width="100" />
         <el-table-column label="周期" min-width="180">
@@ -336,7 +425,7 @@ onMounted(() => {
             {{ formatPeriod(row) }}
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" width="130">
           <template #default="{ row }">
             <el-tag
               :type="statusMap[row.status]?.type || 'info'"
@@ -344,6 +433,9 @@ onMounted(() => {
               disable-transitions
             >
               {{ statusMap[row.status]?.text || row.status }}
+            </el-tag>
+            <el-tag v-if="row.revokeCount > 0" type="danger" size="small" style="margin-left: 4px">
+              撤销{{ row.revokeCount }}次
             </el-tag>
           </template>
         </el-table-column>
@@ -378,6 +470,15 @@ onMounted(() => {
             </el-button>
             <el-button
               v-if="row.status === 'DRAFT'"
+              type="success"
+              size="small"
+              link
+              @click="handleApproveDirect(row)"
+            >
+              审核通过
+            </el-button>
+            <el-button
+              v-if="row.status === 'DRAFT'"
               type="primary"
               size="small"
               link
@@ -387,12 +488,12 @@ onMounted(() => {
             </el-button>
             <el-button
               v-if="row.status === 'APPROVED'"
-              type="success"
+              type="warning"
               size="small"
               link
-              @click="handleGenerateTasks(row)"
+              @click="handleRevokeApproval(row)"
             >
-              排程生成任务
+              撤销审核
             </el-button>
           </template>
         </el-table-column>
@@ -459,7 +560,9 @@ onMounted(() => {
           </el-select>
         </el-form-item>
         <el-form-item label="治疗项目" prop="treatmentItem">
-          <el-input v-model="form.treatmentItem" placeholder="如：推拿治疗、电针治疗" />
+          <el-select v-model="form.treatmentItem" placeholder="请选择或输入治疗项目" filterable allow-create style="width: 100%">
+            <el-option v-for="item in treatmentItemOptions" :key="item" :label="item" :value="item" />
+          </el-select>
         </el-form-item>
         <el-form-item label="频次" prop="frequency">
           <el-select v-model="form.frequency" placeholder="选择频次" style="width: 100%">
@@ -509,10 +612,10 @@ onMounted(() => {
 </template>
 
 <script lang="ts">
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, WarningFilled } from '@element-plus/icons-vue'
 
 export default {
-  components: { Plus },
+  components: { Plus, WarningFilled },
 }
 </script>
 

@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/app'
 import {
   House, List, Clock, DataAnalysis, Grid,
   Document, User, Setting, Management,
-  Fold, Expand, Bell, SwitchButton
+  Fold, Expand, Bell, SwitchButton, DocumentChecked
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -26,6 +26,7 @@ const menuItems = computed(() => {
   }
   if (authStore.isDoctor || authStore.isAdmin) {
     items.push({ path: '/orders', title: '医嘱管理', icon: Document })
+    items.push({ path: '/doctor/plans-review', title: '待审方案', icon: DocumentChecked })
     items.push({ path: '/doctor/patients', title: '患者列表', icon: List })
   }
   items.push({ path: '/settings', title: '个人设置', icon: Setting })

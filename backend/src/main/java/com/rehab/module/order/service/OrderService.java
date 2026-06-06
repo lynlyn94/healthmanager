@@ -13,6 +13,9 @@ import com.rehab.module.patient.entity.Patient;
 import com.rehab.module.patient.mapper.PatientMapper;
 import com.rehab.module.schedule.entity.PatientSchedule;
 import com.rehab.module.schedule.mapper.PatientScheduleMapper;
+import com.rehab.module.task.entity.Task;
+import com.rehab.module.task.mapper.TaskMapper;
+import com.rehab.module.treatment.service.TreatmentService;
 import com.rehab.module.websocket.service.NotificationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +40,8 @@ public class OrderService {
     private final PatientMapper patientMapper;
     private final UserMapper userMapper;
     private final NotificationService notificationService;
+    private final TreatmentService treatmentService;
+    private final TaskMapper taskMapper;
     private final ObjectMapper objectMapper;
 
     // ---- helpers ----
@@ -177,6 +182,20 @@ public class OrderService {
         }
         wrapper.orderByDesc(MedicalOrder::getCreateTime);
         medicalOrderMapper.selectPage(mpPage, wrapper);
+
+        // Populate patient and therapist names
+        for (MedicalOrder order : mpPage.getRecords()) {
+            Patient patient = patientMapper.selectById(order.getPatientId());
+            if (patient != null) {
+                order.setPatientName(patient.getName());
+                if (patient.getAttendingTherapistId() != null) {
+                    User therapist = userMapper.selectById(patient.getAttendingTherapistId());
+                    if (therapist != null) {
+                        order.setTherapistName(therapist.getRealName());
+                    }
+                }
+            }
+        }
         return PageResult.of(mpPage.getTotal(), page, size, mpPage.getRecords());
     }
 
@@ -202,6 +221,11 @@ public class OrderService {
         // auto-submit
         order.setStatus("PENDING_REVIEW");
         medicalOrderMapper.updateById(order);
+
+        // If order is linked to a treatment plan, mark plan as ORDERED
+        if (order.getPlanId() != null) {
+            treatmentService.markPlanOrdered(order.getPlanId());
+        }
 
         log.info("Order created and submitted: id={}, patientId={}, doctorId={}",
                 order.getId(), order.getPatientId(), order.getDoctorId());
@@ -309,5 +333,43 @@ public class OrderService {
         order.setStatus("CANCELLED");
         medicalOrderMapper.updateById(order);
         log.info("Order cancelled: id={}", orderId);
+    }
+
+    @Transactional
+    public void revokeApproval(Long orderId) {
+        checkDoctorOrAdmin();
+        MedicalOrder order = requireOrder(orderId);
+        if (!"APPROVED".equals(order.getStatus())) {
+            throw new BusinessException("只有已审核通过的医嘱才能撤销");
+        }
+        // Check if tasks have already been generated (scheduled)
+        Long taskCount = taskMapper.selectCount(
+                new LambdaQueryWrapper<Task>().eq(Task::getOrderId, orderId));
+        if (taskCount != null && taskCount > 0) {
+            throw new BusinessException("该医嘱已排程生成任务，无法撤销审核");
+        }
+        int count = (order.getRevokeCount() != null ? order.getRevokeCount() : 0) + 1;
+        order.setRevokeCount(count);
+        if (count >= 3) {
+            order.setStatus("CANCELLED");
+            order.setReviewComment("撤销审核超过3次，自动作废");
+            log.info("Order auto-cancelled after {} revocations: id={}", count, orderId);
+        } else {
+            order.setStatus("DRAFT");
+            log.info("Order approval revoked ({}): id={}", count, orderId);
+        }
+        medicalOrderMapper.updateById(order);
+    }
+
+    @Transactional
+    public void approveOrderDirect(Long orderId) {
+        checkDoctorOrAdmin();
+        MedicalOrder order = requireOrder(orderId);
+        if (!"DRAFT".equals(order.getStatus())) {
+            throw new BusinessException("只有草稿状态的医嘱可以直接审核通过");
+        }
+        order.setStatus("APPROVED");
+        medicalOrderMapper.updateById(order);
+        log.info("Order directly approved: id={}", orderId);
     }
 }

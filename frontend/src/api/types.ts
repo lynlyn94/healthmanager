@@ -75,8 +75,10 @@ export interface MedicalOrder {
   note: string
   status: string
   reviewComment?: string
+  revokeCount?: number
   patientName?: string
   doctorName?: string
+  therapistName?: string
 }
 
 export interface Assessment {

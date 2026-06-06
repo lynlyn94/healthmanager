@@ -30,6 +30,8 @@ async function handleLogin() {
     ElMessage.success('登录成功')
     if (authStore.isDoctor) {
       router.push('/orders')
+    } else if (authStore.isTherapist) {
+      router.push('/tasks')
     } else {
       router.push('/square')
     }

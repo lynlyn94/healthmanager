@@ -28,6 +28,7 @@ const filters = reactive({
 
 // ============ Patient dropdown ============
 const patients = ref<Patient[]>([])
+const treatmentItemOptions = ref<string[]>([])
 
 // ============ Create dialog ============
 const showCreateDialog = ref(false)
@@ -108,6 +109,15 @@ async function fetchPatients() {
     if (res.data?.records) {
       patients.value = res.data.records
     }
+  } catch {
+    // swallow
+  }
+}
+
+async function fetchTreatmentItems() {
+  try {
+    const res = await get<any>('/tasks/treatment-items')
+    treatmentItemOptions.value = res.data ?? res ?? []
   } catch {
     // swallow
   }
@@ -267,6 +277,7 @@ watch(calendarDate, () => {
 onMounted(() => {
   fetchTasks()
   fetchPatients()
+  fetchTreatmentItems()
   fetchMonthTaskDates()
 })
 </script>
@@ -462,8 +473,10 @@ onMounted(() => {
           </el-select>
         </el-form-item>
         <el-form-item label="治疗项目" prop="treatmentItem">
-          <el-input v-model="newTaskForm.treatmentItem" placeholder="请输入治疗项目名称" />
-        </el-form-item>
+  <el-select v-model="newTaskForm.treatmentItem" placeholder="请选择或输入治疗项目" filterable allow-create style="width: 100%">
+    <el-option v-for="item in treatmentItemOptions" :key="item" :label="item" :value="item" />
+  </el-select>
+</el-form-item>
         <el-form-item label="任务日期" prop="taskDate">
           <el-date-picker
             v-model="newTaskForm.taskDate"

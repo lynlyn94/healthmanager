@@ -89,6 +89,18 @@ public class OrderController {
         return Result.ok();
     }
 
+    @PutMapping("/{id}/revoke-approval")
+    public Result<Void> revokeApproval(@PathVariable Long id) {
+        orderService.revokeApproval(id);
+        return Result.ok();
+    }
+
+    @PutMapping("/{id}/approve-direct")
+    public Result<Void> approveDirect(@PathVariable Long id) {
+        orderService.approveOrderDirect(id);
+        return Result.ok();
+    }
+
     @PostMapping("/{id}/generate-tasks")
     public Result<List<Task>> generateTasks(@PathVariable Long id) {
         return Result.ok(taskService.generateTasksFromOrder(id));

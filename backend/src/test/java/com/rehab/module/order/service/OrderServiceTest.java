@@ -36,6 +36,7 @@ class OrderServiceTest {
     @Mock private PatientMapper patientMapper;
     @Mock private UserMapper userMapper;
     @Mock private NotificationService notificationService;
+    @Mock private com.rehab.module.treatment.service.TreatmentService treatmentService;
 
     @InjectMocks
     private OrderService orderService;

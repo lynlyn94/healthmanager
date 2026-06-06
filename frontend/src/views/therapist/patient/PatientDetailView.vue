@@ -26,6 +26,17 @@
       </el-descriptions>
     </el-card>
 
+    <!-- 流程进度条 -->
+    <el-card class="workflow-card" shadow="never">
+      <el-steps :active="workflowStep" align-center finish-status="success">
+        <el-step title="量表评估" description="康复评定" />
+        <el-step title="治疗目标" description="设定目标" />
+        <el-step title="治疗方案" description="制定计划" />
+        <el-step title="提交审阅" description="医生审核" />
+        <el-step title="医嘱下达" description="执行治疗" />
+      </el-steps>
+    </el-card>
+
     <!-- 9 项操作标签页 -->
     <el-card class="tabs-card" shadow="never">
       <el-tabs v-model="activeTab" @tab-change="onTabChange" type="border-card">
@@ -188,7 +199,7 @@
               <el-table-column label="状态" width="80" align="center">
                 <template #default="{ row }">
                   <el-tag :type="row.status === 'ACHIEVED' ? 'success' : row.status === 'IN_PROGRESS' ? 'warning' : 'info'" size="small">
-                    {{ row.status }}
+                    {{ row.status === 'ACHIEVED' ? '已达成' : row.status === 'IN_PROGRESS' ? '进行中' : '已放弃' }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -218,7 +229,9 @@
             </div>
             <el-table :data="planList" stripe border style="width: 100%; margin-top: 12px" size="small">
               <el-table-column prop="planName" label="方案名称" min-width="140" />
-              <el-table-column prop="treatmentItems" label="治疗项目" min-width="160" show-overflow-tooltip />
+              <el-table-column label="治疗项目" min-width="160" show-overflow-tooltip>
+                <template #default="{ row }">{{ formatTreatmentItems(row.treatmentItems) }}</template>
+              </el-table-column>
               <el-table-column prop="frequency" label="频次" width="80" />
               <el-table-column prop="dailyCount" label="日次" width="60" align="center" />
               <el-table-column label="开始日期" width="110">
@@ -229,7 +242,7 @@
               </el-table-column>
               <el-table-column label="状态" width="90" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="planStatusTag(row.status)" size="small">{{ row.status }}</el-tag>
+                  <el-tag :type="planStatusTag(row.status)" size="small">{{ planStatusLabel(row.status) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column label="操作" width="160" align="center">
@@ -256,7 +269,7 @@
           </div>
         </el-tab-pane>
 
-        <!-- 6. 患者医嘱（只读） -->
+        <!-- 6. 患者医嘱 -->
         <el-tab-pane label="患者医嘱" name="order">
           <div v-loading="tabLoading.order">
             <el-table :data="orderList" stripe border style="width: 100%" size="small">
@@ -270,13 +283,25 @@
               <el-table-column label="结束" width="110">
                 <template #default="{ row }">{{ row.periodEnd }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="90" align="center">
+              <el-table-column label="状态" width="100" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+                  <el-tag :type="row.status === 'APPROVED' ? 'success' : row.status === 'DRAFT' ? 'info' : ''" size="small">{{ orderStatusLabel(row.status) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="doctorName" label="开嘱医生" width="100" />
               <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
+              <el-table-column label="操作" width="120" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.status === 'APPROVED'"
+                    type="success"
+                    size="small"
+                    @click="generateTasksFromOrderBtn(row)"
+                  >
+                    排程生成任务
+                  </el-button>
+                </template>
+              </el-table-column>
             </el-table>
             <el-empty v-if="!orderList.length && !tabLoading.order" description="暂无医嘱" />
           </div>
@@ -319,15 +344,24 @@
               <div class="schedule-list">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <h4 style="margin: 0;">{{ selectedDate ? selectedDate + ' 日程' : '请选择日期' }}</h4>
-                  <el-button
-                    v-if="scheduleList.some(s => s.eventType === 'ORDER' && s.status === 'SCHEDULED')"
-                    type="success"
-                    size="small"
-                    :loading="generatingTasks"
-                    @click="generateAllTasksFromSchedule"
-                  >
-                    批量生成任务
-                  </el-button>
+                  <div style="display: flex; gap: 8px;">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      @click="openCustomScheduleDialog"
+                    >
+                      自定义排程
+                    </el-button>
+                    <el-button
+                      v-if="scheduleList.some(s => s.eventType === 'ORDER' && s.status === 'SCHEDULED')"
+                      type="success"
+                      size="small"
+                      :loading="generatingTasks"
+                      @click="generateAllTasksFromSchedule"
+                    >
+                      批量生成任务
+                    </el-button>
+                  </div>
                 </div>
                 <el-timeline v-if="filteredSchedules.length">
                   <el-timeline-item
@@ -604,13 +638,50 @@
         <el-button type="primary" :loading="savingPlan" @click="savePlan">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 自定义排程弹窗 -->
+    <el-dialog v-model="scheduleDialogVisible" title="自定义排程" width="560px" destroy-on-close @open="initCustomSchedule">
+      <el-form ref="scheduleFormRef" :model="scheduleForm" :rules="scheduleFormRules" label-width="100px">
+        <el-form-item label="患者">
+          <el-input :value="patient.name" disabled />
+        </el-form-item>
+        <el-form-item label="治疗师" prop="therapistId">
+          <el-select v-model="scheduleForm.therapistId" placeholder="选择治疗师" filterable style="width: 100%">
+            <el-option v-for="t in therapistOptions" :key="t.id" :label="t.realName" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="日期" prop="taskDate">
+          <el-date-picker v-model="scheduleForm.taskDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="时间段" prop="timeSlot">
+          <el-select v-model="scheduleForm.timeSlot" placeholder="选择时间段" style="width: 100%">
+            <el-option v-for="slot in hourlySlots" :key="slot.value" :label="slot.label" :value="slot.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="治疗项目" prop="treatmentItem">
+          <el-select v-model="scheduleForm.treatmentItem" placeholder="选择或输入" filterable allow-create style="width: 100%">
+            <el-option v-for="item in treatmentItemOptions2" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关联医嘱">
+          <el-select v-model="scheduleForm.orderId" placeholder="可选" clearable style="width: 100%">
+            <el-option v-for="o in orderList" :key="o.id" :label="`${o.treatmentItem} (${o.periodStart}~${o.periodEnd})`" :value="o.id" />
+          </el-select>
+        </el-form-item>
+        <el-alert v-if="conflictMsg" :title="conflictMsg" type="warning" show-icon :closable="false" style="margin-top: 8px" />
+      </el-form>
+      <template #footer>
+        <el-button @click="scheduleDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="schedulingCustom" @click="submitCustomSchedule">确认排程</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Edit, ArrowLeft, ArrowRight, SwitchButton } from '@element-plus/icons-vue'
 import { get, post, put, del } from '@/api'
 import type {
@@ -703,6 +774,28 @@ function onTabChange(name: string) {
 }
 
 // ---------- 工具函数 ----------
+function orderStatusLabel(s: string) {
+  const map: Record<string, string> = { DRAFT: '草稿', PENDING_REVIEW: '待审核', APPROVED: '已通过', REJECTED: '已退回', CANCELLED: '已作废' }
+  return map[s] || s
+}
+
+async function generateTasksFromOrderBtn(order: MedicalOrder) {
+  try {
+    await ElMessageBox.confirm(
+      `确认为医嘱「${order.treatmentItem}」排程生成任务？`,
+      '确认排程',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'info' },
+    )
+  } catch { return }
+  try {
+    const res = await post<any>(`/orders/${order.id}/generate-tasks`)
+    const list = (res as any).data ?? res
+    ElMessage.success(`已生成 ${Array.isArray(list) ? list.length : 0} 条治疗任务`)
+    fetchOrders()
+    fetchSchedules()
+  } catch { /* handled */ }
+}
+
 function genderLabel(g: number | undefined) {
   return g === 1 ? '男' : g === 0 ? '女' : '--'
 }
@@ -714,9 +807,46 @@ function statusLabel(s: string | undefined) {
 function planStatusTag(s: string) {
   if (s === 'DRAFT') return 'info'
   if (s === 'SUBMITTED') return 'warning'
-  if (s === 'APPROVED') return 'success'
+  if (s === 'APPROVED') return ''
+  if (s === 'ORDERED') return 'success'
+  if (s === 'REVIEWED') return 'success'
   return ''
 }
+
+function planStatusLabel(s: string) {
+  const map: Record<string, string> = { DRAFT: '草稿', SUBMITTED: '已提交', APPROVED: '已审核(待开医嘱)', ORDERED: '已开医嘱', REVIEWED: '已审阅' }
+  return map[s] || s
+}
+
+function formatTreatmentItems(val: string): string {
+  if (!val) return '-'
+  try {
+    const arr = JSON.parse(val)
+    if (Array.isArray(arr)) return arr.join('、')
+  } catch {}
+  return val
+}
+
+function parseTreatmentItemsForEdit(val: string): string {
+  if (!val) return ''
+  try {
+    const arr = JSON.parse(val)
+    if (Array.isArray(arr)) return arr.join(', ')
+  } catch {}
+  return val
+}
+
+// Workflow step: 0=未开始, 1=已评估, 2=已设目标, 3=已定方案, 4=已提交/审阅, 5=已有医嘱
+const workflowStep = computed(() => {
+  if (orderList.value.length > 0) return 5
+  if (planList.value.some(p => p.status === 'ORDERED')) return 5
+  if (planList.value.some(p => p.status === 'REVIEWED' || p.status === 'APPROVED')) return 4
+  if (planList.value.some(p => p.status === 'SUBMITTED')) return 4
+  if (planList.value.length > 0) return 3
+  if (goalList.value.length > 0) return 2
+  if (assessmentList.value.length > 0) return 1
+  return 0
+})
 
 // ==================== Tab 1: 患者详情（内联编辑）====================
 const detailForm = reactive<Partial<Patient>>({})
@@ -1004,7 +1134,7 @@ function openPlanDialog(row?: TreatmentPlan) {
     Object.assign(planForm, {
       patientId: patientId.value,
       planName: row.planName,
-      treatmentItems: row.treatmentItems,
+      treatmentItems: parseTreatmentItemsForEdit(row.treatmentItems),
       frequency: row.frequency,
       dailyCount: row.dailyCount,
       periodStart: row.periodStart,
@@ -1177,6 +1307,118 @@ function prevMonth() {
   fetchSchedules()
 }
 
+// ---- Custom scheduling ----
+const scheduleDialogVisible = ref(false)
+const scheduleFormRef = ref<FormInstance>()
+const schedulingCustom = ref(false)
+const conflictMsg = ref('')
+const therapistOptions = ref<{ id: number; realName: string }[]>([])
+const treatmentItemOptions2 = ref<string[]>([])
+
+const hourlySlots = [
+  { label: '08:00 - 09:00', value: '08:00-09:00' },
+  { label: '09:00 - 10:00', value: '09:00-10:00' },
+  { label: '10:00 - 11:00', value: '10:00-11:00' },
+  { label: '11:00 - 12:00', value: '11:00-12:00' },
+  { label: '14:00 - 15:00', value: '14:00-15:00' },
+  { label: '15:00 - 16:00', value: '15:00-16:00' },
+  { label: '16:00 - 17:00', value: '16:00-17:00' },
+  { label: '17:00 - 18:00', value: '17:00-18:00' },
+]
+
+const scheduleForm = reactive({
+  patientId: 0,
+  therapistId: null as number | null,
+  taskDate: '',
+  timeSlot: '',
+  treatmentItem: '',
+  orderId: null as number | null,
+})
+
+const scheduleFormRules: FormRules = {
+  therapistId: [{ required: true, message: '请选择治疗师', trigger: 'change' }],
+  taskDate: [{ required: true, message: '请选择日期', trigger: 'change' }],
+  timeSlot: [{ required: true, message: '请选择时间段', trigger: 'change' }],
+  treatmentItem: [{ required: true, message: '请输入治疗项目', trigger: 'blur' }],
+}
+
+async function openCustomScheduleDialog() {
+  scheduleForm.patientId = patientId.value
+  scheduleForm.therapistId = patient.value.attendingTherapistId || null
+  scheduleForm.taskDate = selectedDate.value || new Date().toISOString().slice(0, 10)
+  scheduleForm.timeSlot = ''
+  scheduleForm.treatmentItem = ''
+  scheduleForm.orderId = null
+  conflictMsg.value = ''
+  scheduleDialogVisible.value = true
+
+  // Load therapist options from patient's group or all therapists
+  try {
+    const res = await get<any>('/admin/therapy-groups')
+    const groups = (res as any).data ?? res ?? []
+    // Get users in the patient's group
+    const usersRes = await get<any>('/admin/users', { size: 200 })
+    therapistOptions.value = (usersRes as any).data?.records ?? []
+  } catch { /* ignore */ }
+
+  // Load treatment items
+  try {
+    const res = await get<any>('/tasks/treatment-items')
+    treatmentItemOptions2.value = (res as any).data ?? res ?? []
+  } catch { /* ignore */ }
+}
+
+async function checkConflict() {
+  if (!scheduleForm.therapistId || !scheduleForm.taskDate || !scheduleForm.timeSlot) {
+    conflictMsg.value = ''
+    return
+  }
+  try {
+    const res = await get<any>('/tasks/check-conflict', {
+      therapistId: scheduleForm.therapistId,
+      taskDate: scheduleForm.taskDate,
+      timeSlot: scheduleForm.timeSlot,
+    })
+    const data = (res as any).data ?? res
+    conflictMsg.value = data.conflict ? data.message : ''
+  } catch { conflictMsg.value = '' }
+}
+
+// Watch for conflict check when therapist/date/slot changes
+import { watch } from 'vue'
+watch(() => [scheduleForm.therapistId, scheduleForm.taskDate, scheduleForm.timeSlot], () => {
+  checkConflict()
+})
+
+function initCustomSchedule() {
+  conflictMsg.value = ''
+}
+
+async function submitCustomSchedule() {
+  const valid = await scheduleFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  if (conflictMsg.value) {
+    ElMessage.warning('存在日程冲突，请调整时间或治疗师')
+    return
+  }
+  schedulingCustom.value = true
+  try {
+    await post('/tasks/schedule-custom', {
+      patientId: scheduleForm.patientId,
+      therapistId: scheduleForm.therapistId,
+      taskDate: scheduleForm.taskDate,
+      timeSlot: scheduleForm.timeSlot,
+      treatmentItem: scheduleForm.treatmentItem,
+      orderId: scheduleForm.orderId || undefined,
+    })
+    ElMessage.success('排程成功')
+    scheduleDialogVisible.value = false
+    fetchSchedules()
+  } finally {
+    schedulingCustom.value = false
+  }
+}
+
 const generatingTasks = ref(false)
 
 async function generateTaskFromSchedule(schedule: PatientSchedule) {
@@ -1272,6 +1514,13 @@ async function handleDischarge() {
 
 .info-card {
   margin-bottom: 16px;
+}
+
+.workflow-card {
+  margin-bottom: 16px;
+}
+.workflow-card :deep(.el-step__title) {
+  font-size: 13px;
 }
 
 .info-card-header {

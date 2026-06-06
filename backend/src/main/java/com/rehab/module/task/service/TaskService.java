@@ -11,6 +11,8 @@ import com.rehab.module.order.entity.MedicalOrder;
 import com.rehab.module.order.mapper.MedicalOrderMapper;
 import com.rehab.module.schedule.entity.PatientSchedule;
 import com.rehab.module.schedule.mapper.PatientScheduleMapper;
+import com.rehab.module.system.entity.SystemDict;
+import com.rehab.module.system.mapper.SystemDictMapper;
 import com.rehab.module.task.entity.Task;
 import com.rehab.module.task.entity.TaskVerification;
 import com.rehab.module.task.mapper.TaskMapper;
@@ -30,6 +32,7 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -432,5 +435,23 @@ public class TaskService {
 
         log.info("Generated task id={} from schedule id={}", task.getId(), scheduleId);
         return task;
+    }
+
+    // -------------------- getTreatmentItems --------------------
+
+    private final SystemDictMapper systemDictMapper;
+
+    public List<String> getTreatmentItems() {
+        // Read from system_dict TREATMENT_ITEM type (managed by admin)
+        List<SystemDict> dicts = systemDictMapper.selectList(
+                new LambdaQueryWrapper<SystemDict>()
+                        .eq(SystemDict::getDictType, "TREATMENT_ITEM")
+                        .eq(SystemDict::getStatus, 1)
+                        .orderByAsc(SystemDict::getSortOrder));
+        if (!dicts.isEmpty()) {
+            return dicts.stream().map(SystemDict::getDictValue).collect(Collectors.toList());
+        }
+        // Fallback: distinct items from existing tasks
+        return taskMapper.selectDistinctTreatmentItems();
     }
 }

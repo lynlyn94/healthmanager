@@ -1,6 +1,7 @@
 package com.rehab.module.order.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.rehab.common.BaseEntity;
@@ -28,4 +29,11 @@ public class MedicalOrder extends BaseEntity {
     private String note;
     private String status;
     private String reviewComment;
+    private Integer revokeCount;
+
+    @TableField(exist = false)
+    private String patientName;
+
+    @TableField(exist = false)
+    private String therapistName;
 }

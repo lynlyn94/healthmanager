@@ -84,9 +84,8 @@ async function fetchStats() {
 
     const extract = (res: any) => {
       const data = res.data ?? res
-      return (typeof data === 'object' && data.treatmentCount) ? data.treatmentCount
-        : (typeof data === 'object' && data.totalCount) ? data.totalCount
-        : (data.records ? data.records.reduce((s: number, r: any) => s + (r.treatmentCount || 0), 0) : 0)
+      return data?.totalTreatmentCount ?? data?.treatmentCount ?? data?.totalCount
+        ?? (data?.records ? data.records.reduce((s: number, r: any) => s + (r.treatmentCount || 0), 0) : 0)
     }
 
     todayCount.value = extract(todayRes)
@@ -134,7 +133,7 @@ async function fetchTrend() {
         {
           name: '患者数',
           type: 'line',
-          data: records.map((r) => r.patientCount || 0),
+          data: records.map((r) => r.patientCount || r.patients || 0),
           itemStyle: { color: '#378ADD' },
           smooth: true,
         },
@@ -161,8 +160,8 @@ async function fetchTable() {
     } else if (typeof data === 'object') {
       tableData.value = [{
         date: `${formatDate(startDate)} ~ ${formatDate(endDate)}`,
-        treatmentCount: data.treatmentCount ?? data.totalCount ?? 0,
-        patientCount: data.patientCount ?? 0,
+        treatmentCount: data.totalTreatmentCount ?? data.treatmentCount ?? data.totalCount ?? 0,
+        patientCount: data.totalPatientCount ?? data.patientCount ?? 0,
         treatmentType: typeFilter.value || '-',
       }] as any
     }

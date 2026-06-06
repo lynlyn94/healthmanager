@@ -2,7 +2,9 @@ package com.rehab.module.task.controller;
 
 import com.rehab.common.PageResult;
 import com.rehab.common.Result;
+import com.rehab.common.exception.BusinessException;
 import com.rehab.module.task.entity.Task;
+import com.rehab.module.task.mapper.TaskMapper;
 import com.rehab.module.task.service.TaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +12,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +23,7 @@ import java.util.Map;
 public class TaskController {
 
     private final TaskService taskService;
+    private final TaskMapper taskMapper;
 
     /**
      * List tasks with filters and data-scope control.
@@ -103,5 +107,50 @@ public class TaskController {
             @RequestParam int year,
             @RequestParam int month) {
         return Result.ok(taskService.getCalendarTasks(therapistId, year, month));
+    }
+
+    @GetMapping("/treatment-items")
+    public Result<List<String>> getTreatmentItems() {
+        return Result.ok(taskService.getTreatmentItems());
+    }
+
+    @GetMapping("/check-conflict")
+    public Result<Map<String, Object>> checkConflict(@RequestParam Long therapistId,
+                                                      @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate taskDate,
+                                                      @RequestParam String timeSlot) {
+        boolean hasConflict = taskMapper.existsConflict(therapistId, taskDate, timeSlot);
+        Map<String, Object> result = new HashMap<>();
+        result.put("conflict", hasConflict);
+        if (hasConflict) {
+            result.put("message", "该治疗师在 " + taskDate + " " + timeSlot + " 已有任务安排");
+        }
+        return Result.ok(result);
+    }
+
+    @PostMapping("/schedule-custom")
+    public Result<Task> createScheduledTask(@RequestBody Map<String, Object> body) {
+        Long patientId = Long.valueOf(body.get("patientId").toString());
+        Long orderId = body.get("orderId") != null ? Long.valueOf(body.get("orderId").toString()) : null;
+        Long therapistId = Long.valueOf(body.get("therapistId").toString());
+        String taskDateStr = body.get("taskDate").toString();
+        LocalDate taskDate = LocalDate.parse(taskDateStr);
+        String timeSlot = body.get("timeSlot").toString();
+        String treatmentItem = body.get("treatmentItem").toString();
+
+        // Conflict check
+        if (taskMapper.existsConflict(therapistId, taskDate, timeSlot)) {
+            throw new BusinessException("日程冲突: 该治疗师在 " + taskDate + " " + timeSlot + " 已有任务安排");
+        }
+
+        Task task = new Task();
+        task.setPatientId(patientId);
+        task.setOrderId(orderId);
+        task.setTherapistId(therapistId);
+        task.setTaskDate(taskDate);
+        task.setTimeSlot(timeSlot);
+        task.setTreatmentItem(treatmentItem);
+        task.setStatus("PENDING");
+
+        return Result.ok(taskService.createTask(task));
     }
 }

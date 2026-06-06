@@ -56,6 +56,12 @@ const router = createRouter({
           component: () => import('@/views/settings/SettingsView.vue'),
         },
         {
+          path: '/doctor/plans-review',
+          name: 'PlanReview',
+          component: () => import('@/views/doctor/PlanReviewView.vue'),
+          meta: { role: 'DOCTOR' },
+        },
+        {
           path: '/admin/users',
           name: 'AdminUsers',
           component: () => import('@/views/admin/UserManageView.vue'),
@@ -101,8 +107,19 @@ router.beforeEach((to, _from, next) => {
     return
   }
   if (to.meta.role && to.meta.role !== authStore.role) {
-    next('/square')
+    next(authStore.isDoctor ? '/orders' : '/tasks')
     return
+  }
+  // Redirect / to role-appropriate home
+  if (to.path === '/' || to.path === '/square') {
+    if (authStore.isDoctor) {
+      next('/orders')
+      return
+    }
+    if (authStore.isTherapist) {
+      next('/tasks')
+      return
+    }
   }
   next()
 })

@@ -51,4 +51,20 @@ public class TreatmentPlanController {
         String reviewComment = params.get("reviewComment");
         return Result.ok(treatmentService.reviewPlan(id, UserContext.getUserId(), reviewComment));
     }
+
+    @PostMapping("/{id}/reject")
+    public Result<Void> reject(@PathVariable Long id, @RequestBody Map<String, String> params) {
+        treatmentService.rejectPlan(id, params.get("reason"));
+        return Result.ok();
+    }
+
+    @GetMapping("/pending-review")
+    public Result<List<TreatmentPlan>> listPendingReview() {
+        return Result.ok(treatmentService.listPendingReview());
+    }
+
+    @GetMapping("/approved-by-me")
+    public Result<List<TreatmentPlan>> listApprovedByMe() {
+        return Result.ok(treatmentService.listApprovedByReviewer(UserContext.getUserId()));
+    }
 }
