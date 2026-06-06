@@ -149,10 +149,7 @@ async function markAllNotifsRead() {
       <el-col
         v-for="card in cards"
         :key="card.title"
-        :xs="24"
-        :sm="12"
-        :md="12"
-        :lg="6"
+        :span="6"
         class="card-col"
       >
         <div class="nav-card" @click="handleCardClick(card)">
@@ -341,7 +338,7 @@ export default {
 
 /* ---- Card grid ---- */
 .card-grid {
-  max-width: 1200px;
+  max-width: 960px;
   margin: 0 auto;
 }
 .card-col {
