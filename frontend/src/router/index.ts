@@ -110,8 +110,8 @@ router.beforeEach((to, _from, next) => {
     next(authStore.isDoctor ? '/orders' : '/tasks')
     return
   }
-  // Redirect / to role-appropriate home
-  if (to.path === '/' || to.path === '/square') {
+  // Redirect / to role-appropriate home, but allow intentional navigation to /square
+  if (to.path === '/') {
     if (authStore.isDoctor) {
       next('/orders')
       return
