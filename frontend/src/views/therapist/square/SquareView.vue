@@ -145,7 +145,7 @@ async function markAllNotifsRead() {
     </div>
 
     <!-- Card grid: 2 rows x 4 columns -->
-    <el-row :gutter="20" class="card-grid">
+    <el-row :gutter="20" class="card-grid" justify="center">
       <el-col
         v-for="card in cards"
         :key="card.title"
@@ -370,9 +370,10 @@ export default {
 /* ---- Individual card ---- */
 .nav-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 20px 20px;
+  gap: 12px;
+  padding: 28px 20px;
   background: #fff;
   border-radius: 12px;
   cursor: pointer;
@@ -420,6 +421,7 @@ export default {
 .card-content {
   flex: 1;
   min-width: 0;
+  text-align: center;
 }
 .card-title {
   font-size: 16px;
@@ -435,13 +437,7 @@ export default {
 }
 
 .card-arrow {
-  color: #c0c4cc;
-  transition: all 0.3s ease;
-  flex-shrink: 0;
-}
-.nav-card:hover .card-arrow {
-  color: #1d9e75;
-  transform: translateX(4px);
+  display: none;
 }
 
 /* ---- Dialogs ---- */
