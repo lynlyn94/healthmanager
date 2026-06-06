@@ -290,16 +290,12 @@
               </el-table-column>
               <el-table-column prop="doctorName" label="开嘱医生" width="100" />
               <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
-              <el-table-column label="操作" width="120" fixed="right">
+              <el-table-column label="操作" width="200" fixed="right">
                 <template #default="{ row }">
-                  <el-button
-                    v-if="row.status === 'APPROVED'"
-                    type="success"
-                    size="small"
-                    @click="generateTasksFromOrderBtn(row)"
-                  >
-                    排程生成任务
-                  </el-button>
+                  <template v-if="row.status === 'APPROVED'">
+                    <el-button type="primary" size="small" @click="openCustomScheduleFromOrder(row)">自定义排程</el-button>
+                    <el-button type="success" size="small" @click="generateTasksFromOrderBtn(row)">自动排程</el-button>
+                  </template>
                 </template>
               </el-table-column>
             </el-table>
@@ -346,20 +342,13 @@
                   <h4 style="margin: 0;">{{ selectedDate ? selectedDate + ' 日程' : '请选择日期' }}</h4>
                   <div style="display: flex; gap: 8px;">
                     <el-button
-                      type="primary"
-                      size="small"
-                      @click="openCustomScheduleDialog"
-                    >
-                      自定义排程
-                    </el-button>
-                    <el-button
-                      v-if="scheduleList.some(s => s.eventType === 'ORDER' && s.status === 'SCHEDULED')"
+                      v-if="orderList.some(o => o.status === 'APPROVED')"
                       type="success"
                       size="small"
                       :loading="generatingTasks"
-                      @click="generateAllTasksFromSchedule"
+                      @click="batchGenerateAllOrders"
                     >
-                      批量生成任务
+                      一键排程全部医嘱
                     </el-button>
                   </div>
                 </div>
@@ -376,15 +365,6 @@
                         {{ item.status }}
                       </el-tag>
                       <span class="timeline-title">{{ item.title }}</span>
-                      <el-button
-                        v-if="item.eventType === 'ORDER' && item.status === 'SCHEDULED'"
-                        type="primary"
-                        size="small"
-                        link
-                        @click="generateTaskFromSchedule(item)"
-                      >
-                        生成任务
-                      </el-button>
                     </div>
                     <p v-if="item.description" class="timeline-desc">{{ item.description }}</p>
                   </el-timeline-item>
@@ -1421,41 +1401,45 @@ async function submitCustomSchedule() {
 
 const generatingTasks = ref(false)
 
-async function generateTaskFromSchedule(schedule: PatientSchedule) {
-  try {
-    await post(`/schedule/${schedule.id}/generate-task`)
-    ElMessage.success('任务已生成')
-    fetchSchedules()
-  } catch { /* handled */ }
-}
-
-async function generateAllTasksFromSchedule() {
-  const orderSchedules = scheduleList.value.filter(s => s.eventType === 'ORDER' && s.status === 'SCHEDULED')
-  if (!orderSchedules.length) {
-    ElMessage.warning('没有可生成任务的排程条目')
-    return
-  }
-  const orderId = orderSchedules[0].sourceId
-  if (!orderId) {
-    ElMessage.warning('找不到关联的医嘱')
+async function batchGenerateAllOrders() {
+  const approvedOrders = orderList.value.filter(o => o.status === 'APPROVED')
+  if (!approvedOrders.length) {
+    ElMessage.warning('没有待排程的已审核医嘱')
     return
   }
   try {
     await ElMessageBox.confirm(
-      '确认为该医嘱生成全部治疗任务？',
-      '确认批量生成',
-      { confirmButtonText: '确认生成', cancelButtonText: '取消', type: 'info' },
+      `确认为全部 ${approvedOrders.length} 条已审核医嘱自动排程生成任务？`,
+      '一键排程',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'info' },
     )
   } catch { return }
   generatingTasks.value = true
+  let total = 0
   try {
-    const res = await post<any>(`/orders/${orderId}/generate-tasks`)
-    const list = (res as any).data ?? res
-    ElMessage.success(`已生成 ${Array.isArray(list) ? list.length : 0} 条任务`)
+    for (const order of approvedOrders) {
+      const res = await post<any>(`/orders/${order.id}/generate-tasks`)
+      const list = (res as any).data ?? res
+      total += Array.isArray(list) ? list.length : 0
+    }
+    ElMessage.success(`已生成 ${total} 条治疗任务`)
     fetchSchedules()
+    fetchOrders()
   } finally {
     generatingTasks.value = false
   }
+}
+
+function openCustomScheduleFromOrder(order: MedicalOrder) {
+  scheduleForm.patientId = patientId.value
+  scheduleForm.therapistId = patient.value.attendingTherapistId || null
+  scheduleForm.taskDate = order.periodStart || new Date().toISOString().slice(0, 10)
+  scheduleForm.timeSlot = ''
+  scheduleForm.treatmentItem = order.treatmentItem
+  scheduleForm.orderId = order.id
+  conflictMsg.value = ''
+  scheduleDialogVisible.value = true
+  initCustomSchedule()
 }
 
 function nextMonth() {
