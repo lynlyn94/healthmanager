@@ -6,6 +6,10 @@ import com.alibaba.excel.read.listener.ReadListener;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.rehab.common.Result;
 import com.rehab.infrastructure.UserContext;
+import com.rehab.module.auth.entity.User;
+import com.rehab.module.auth.mapper.UserMapper;
+import com.rehab.module.task.entity.Task;
+import com.rehab.module.task.mapper.TaskMapper;
 import com.rehab.module.treatment.entity.TreatmentRecord;
 import com.rehab.module.treatment.mapper.TreatmentRecordMapper;
 import jakarta.servlet.http.HttpServletResponse;
@@ -26,12 +30,30 @@ import java.util.stream.Collectors;
 public class TreatmentRecordController {
 
     private final TreatmentRecordMapper treatmentRecordMapper;
+    private final UserMapper userMapper;
+    private final TaskMapper taskMapper;
 
     @GetMapping("/api/v1/patients/{patientId}/records")
     public Result<List<TreatmentRecord>> listByPatient(@PathVariable Long patientId) {
         List<TreatmentRecord> records = treatmentRecordMapper.selectList(new LambdaQueryWrapper<TreatmentRecord>()
                 .eq(TreatmentRecord::getPatientId, patientId)
                 .orderByDesc(TreatmentRecord::getTreatmentDate));
+
+        for (TreatmentRecord r : records) {
+            // Populate therapist name
+            if (r.getTherapistId() != null) {
+                User therapist = userMapper.selectById(r.getTherapistId());
+                if (therapist != null) r.setTherapistName(therapist.getRealName());
+            }
+            // Populate timeSlot and status from linked task
+            if (r.getTaskId() != null) {
+                Task task = taskMapper.selectById(r.getTaskId());
+                if (task != null) {
+                    r.setTimeSlot(task.getTimeSlot());
+                    r.setStatus(task.getStatus());
+                }
+            }
+        }
         return Result.ok(records);
     }
 

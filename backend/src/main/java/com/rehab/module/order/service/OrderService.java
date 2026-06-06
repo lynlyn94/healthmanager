@@ -65,10 +65,9 @@ public class OrderService {
      */
     private List<String> getTimeSlots(int dailyCount) {
         List<String> slots = new ArrayList<>();
-        if (dailyCount >= 1) slots.add("上午");
-        if (dailyCount >= 2) slots.add("下午");
-        if (dailyCount >= 3) slots.add("晚上");
-        // cap at 3
+        if (dailyCount >= 1) slots.add("09:00-10:00");
+        if (dailyCount >= 2) slots.add("14:00-15:00");
+        if (dailyCount >= 3) slots.add("16:00-17:00");
         while (slots.size() < dailyCount) {
             slots.add("时段" + (slots.size() + 1));
         }

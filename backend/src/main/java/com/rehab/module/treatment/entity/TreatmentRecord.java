@@ -23,6 +23,14 @@ public class TreatmentRecord {
     private String treatmentItem;
     private Integer duration;
     private String note;
+
+    @TableField(exist = false)
+    private String therapistName;
+    @TableField(exist = false)
+    private String timeSlot;
+    @TableField(exist = false)
+    private String status;
+
     @TableField(fill = FieldFill.INSERT)
     private Integer isDeleted;
     @TableField(fill = FieldFill.INSERT)

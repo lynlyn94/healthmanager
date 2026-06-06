@@ -361,8 +361,8 @@
                     size="small"
                   >
                     <div class="timeline-content">
-                      <el-tag size="small" :type="item.status === 'COMPLETED' ? 'success' : 'warning'">
-                        {{ item.status }}
+                      <el-tag size="small" :type="item.status === 'TASK_GENERATED' ? 'success' : item.status === 'SCHEDULED' ? 'warning' : 'info'">
+                        {{ item.status === 'SCHEDULED' ? '待排程' : item.status === 'TASK_GENERATED' ? '已生成任务' : item.status }}
                       </el-tag>
                       <span class="timeline-title">{{ item.title }}</span>
                     </div>
@@ -382,10 +382,10 @@
               <el-table-column label="日期" width="110" prop="treatmentDate" />
               <el-table-column prop="treatmentItem" label="治疗项目" min-width="140" />
               <el-table-column prop="therapistName" label="治疗师" width="100" />
-              <el-table-column label="时间" width="80" prop="timeSlot" />
-              <el-table-column label="状态" width="80" align="center">
+              <el-table-column label="时间段" width="110" prop="timeSlot" />
+              <el-table-column label="状态" width="90" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="row.status === 'COMPLETED' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+                  <el-tag :type="recordStatusTag(row.status)" size="small">{{ recordStatusLabel(row.status) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="note" label="备注" min-width="160" show-overflow-tooltip />
@@ -1464,6 +1464,17 @@ interface TreatmentRecord {
 }
 
 const recordList = ref<TreatmentRecord[]>([])
+
+function recordStatusTag(s: string) {
+  if (s === 'VERIFIED') return 'success'
+  if (s === 'IN_PROGRESS') return 'warning'
+  if (s === 'REVOKED') return 'danger'
+  return 'info'
+}
+function recordStatusLabel(s: string) {
+  const map: Record<string, string> = { PENDING: '待执行', IN_PROGRESS: '执行中', VERIFIED: '已核销', REVOKED: '已撤销' }
+  return map[s] || s || '-'
+}
 
 async function fetchRecords() {
   tabLoading.record = true
